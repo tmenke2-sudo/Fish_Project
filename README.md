@@ -1,6 +1,8 @@
 # Exploring U.S. Fishing Creel Data
 Author: Tayler Menke
 
+(For accurate viewing, visit https://tmenke2-sudo.github.io/Fish_Project/Fish_Project_Final.html)
+
 ## Data
 
 When looking at the data and trying to find something that would be more personal and meaningful to work with, after discussing with my professor, I decided to find a fishing dataset to analyze, as I simply enjoy going fishing whenever I have free time.
