@@ -1,0 +1,155 @@
+# Exploring U.S. Fishing Creel Data
+Author: Tayler Menke
+
+## Data
+
+When looking at the data and trying to find something that would be more personal and meaningful to work with, after discussing with my professor, I decided to find a fishing dataset to analyze, as I simply enjoy going fishing whenever I have free time.
+
+After doing research, I found a fishing dataset from the USGS that contains fishing information gathered from 40 states across the U.S. I looked through the dataset and found three CSV files that stood out to me. FishData.csv had information regarding trip data, recording an ID number, date of the trip, fish caught, released, or harvested, as well as showing the names of the fish alongside a taxonomy ID. SurveyData.csv contained more information about the locations of the trips. It shared the common ID number with FishData, as well as sharing the body of water and other location details like longitude and latitude. Lastly, TaxaData.csv shared the scientific names alongside the common names of the fish, all of which were tied together via the TSN (Taxonomic Serial Number).
+
+```{python}
+import pandas as pd
+import matplotlib.pyplot as plt
+import plotly.express as px
+
+fishData = pd.read_csv("C:/Users/tayle/OneDrive/Data_Wrangling/Fish_Project/FishData.csv")
+locData = pd.read_csv("C:/Users/tayle/OneDrive/Data_Wrangling/Fish_Project/SurveyData.csv")
+nameData = pd.read_csv("C:/Users/tayle/OneDrive/Data_Wrangling/Fish_Project/TaxaData.csv")
+```
+
+## Merging the Data
+
+Once again, upon looking at the CSV files, I noticed that there is a common Survey_ID that links the fishing data with the location data. I decided to merge the two datasets on the ID using a left merge to ensure that all the information is kept from both CSV files, as they contain valuable information that I can analyze further.
+
+```{python}
+merged_data = pd.merge(fishData, locData, left_on='Survey_ID', right_on='Survey_ID',how='left')
+merged_data.columns.to_list()
+```
+
+## Datetime
+
+I also noticed that the new merged dataset included dates for the fishing trips. I could use this later to possibly see how successful trips were based on the number of catches over time. To do so, I converted the start and end dates to the datetime format using pandas, just to ensure that I could effectively use the dates.
+
+```{python}
+merged_data['Start_Date'] = pd.to_datetime(merged_data['Start_Date']) 
+merged_data['End_Date'] = pd.to_datetime(merged_data['End_Date'])   
+```
+
+## Taxonomy Names
+
+For all of the datasets, I noticed that they include the scientific names of the fish alongside their family and genus. They also included the common names for the species in TaxaData.csv. I knew that I wanted to incorporate this dataset to create a name column; however, I wanted to ensure that I could properly merge the taxonomy information with the merged fish and location data. The merged data included a TSN column that featured the Taxonomic Serial Number for each fish species, which I could use to match with the species TSN in the taxonomy dataset. TaxaData.csv also included its own version of a TSN. They had it divided into species, genus, and family TSNs, which allowed for more flexible matching depending on the level of taxonomic information available.
+
+## Merging Fish Data w/ Taxonomy Info
+
+Upon inspection, I found that the TSNs match across species, genus, and family names. This confirmed that I would be able to use a left merge using TSN. The only issue I ran into was duplicate entries using the same TSN multiple times. To fix this, I simply dropped duplicates for the Species_TSN that contained my common names. After successfully merging the datasets, I then created my Common_Name column, which made the dataset easier to navigate and use when wanting to identify specific fish for the layman.
+
+```{python}
+name_dd = nameData.drop_duplicates(subset='Species_TSN')
+
+# Merge species common names into the complete dataset
+fish_data = pd.merge(merged_data, name_dd[['Species_TSN', 'Species_Com']], left_on='TSN', right_on='Species_TSN', how='left')
+
+# Create a clearer column containing the common fish species name
+fish_data['Fish_Common_Name'] = fish_data['Species_Com']
+```
+
+## Comparing the Best Place to Catch Fish
+
+Next, I wanted to look into where fish were caught. I was going to define a successful fishing trip, but upon working with the data, there were too many missing values and extreme outliers tracking more than just a weekend out on the water. Pivoting, I decided to look into waterbody data. The dataset did contain adequate information, such as fish caught per hour and per day, and allowed me to see what body of water was used. When initially looking into the data, there was some imbalance in the waterbody type, with lakes, reservoirs, ponds, and tailraces grouped into one large group compared to rivers and streams. Despite that, I could still compare catches per day to see what bodies of water would equate to a more exciting outing.
+
+```{python}
+# Look at the available waterbody types
+fish_data['WB_Type'].value_counts(dropna=False)
+
+# Keep Lakes vs Rivers
+waterbody_data = fish_data[
+    fish_data['WB_Type'].isin([
+        'Lakes, Reservoirs, Ponds, and Tailraces',
+        'Rivers and Streams'
+    ])]
+
+# Compare Catch_Per_Day between the two waterbody types
+waterbody_summary = waterbody_data.groupby('WB_Type')['Catch_Per_Day'].agg(
+    ['count', 'mean', 'median', 'std', 'min', 'max']
+)
+
+waterbody_summary
+```
+
+## Top Fish Species by Average Catch Per Day
+
+Next, I wanted to visualize which fish were the most common to catch. To do this, I filtered through the fish data, aggregating the count and mean, and eventually sorting them. This initially populated species that only had 8 catches, which did not show the truly common fish. To fix this, I filtered out those small figures to make sure there were an adequate number of sample catches.
+
+```{python}
+# Calculate the average Catch_Per_Day for each fish species
+fish_caught = (
+    fish_data
+    .dropna(subset=['Fish_Common_Name', 'Catch_Per_Day'])
+    .groupby('Fish_Common_Name')['Catch_Per_Day']
+    .agg(['count', 'mean'])
+    .sort_values('mean', ascending=False)
+)
+
+# Keep species with at least 100 catches
+filtered_fish_caught = fish_caught[
+    fish_caught['count'] >= 100
+].sort_values('mean', ascending=False)
+
+filtered_fish_caught.head(15)
+```
+
+## Findings
+
+I then wanted to create a simple visualization showing the top fish species that were caught on a given day. Doing this, we can see just how many of the "smaller" species were caught in large quantities, such as yellow perch, sunfish, bluegill, and crappie. These fish typically swim in schools, which helps explain why so many may be caught in a single day compared to some catfish or bass.
+
+```{python}
+top_10_fish_caught = filtered_fish_caught.head(10).sort_values('mean')
+
+top_10_fish_caught['mean'].plot(kind='barh')
+
+plt.title('Top 10 Fish by Average Catch Per Day')
+plt.xlabel('Average Catch Per Day')
+plt.ylabel('Fish Species')
+plt.show()
+```
+
+## Looking at Bass
+
+I then wanted to shift my focus to a fish that I specifically try to target when fishing: bass. I first looked into all fish species that contained the name "bass." From there, I decided to use the four most caught bass species: largemouth, smallmouth, rock, and white bass. After filtering to these four species, I wanted to visualize where they were caught. The location dataset contained longitude and latitude points recording where outings took place. I then created a bass dataset to use for a visualization showing only the four targeted species.
+
+```{python}
+bass_names = fish_data[fish_data['Fish_Common_Name'].str.contains('Bass', na=False)]
+
+bass_names['Fish_Common_Name'].value_counts()
+
+# Focus on the four most commonly bass species
+common_bass = [
+    'Largemouth Bass',
+    'Smallmouth Bass',
+    'Rock Bass',
+    'White Bass'
+]
+
+# Filter the dataset to the selected bass species
+bass_data = fish_data[fish_data['Fish_Common_Name'].isin(common_bass)]
+```
+
+## Mapping Bass
+
+This visualizes where each bass species was recorded given the latitude and longitude points. I had to look into how to actually visualize the data on a map, and I found that Plotly Express allows you to geographically plot points on a map. This allows for a more complete and recognizable visualization. On it, you can see that many fish were caught on and around the Great Lakes and the Mississippi River.
+
+```{python}
+bass_map_plot = px.scatter_geo(
+    bass_data,
+    lat='Lat',
+    lon='Lon',
+    color='Fish_Common_Name',
+    hover_name='Fish_Common_Name',
+    scope='usa',
+    title='Geographic Distribution of Common Bass Species'
+)
+
+bass_map_plot.show()
+```
+
+Overall, this project showed me that data doesn't have to be boring. I was able to choose a topic that excited me and made me curious about what was in the data. I was lucky to have the data be so easy to work with at points, helping me combine and work with all three CSV files I selected. I found that I was actually able to use our discussed class strategies in wrangling the data, creating new column names, making the data easier to navigate, as well as aggregating and filtering through the data to create more meaningful insights. I believe if I had more time, I would try to look into the datetime more, as I wasn't able to meaningfully use it given how the trips and dates were inputted. I also would have liked to possibly create a description of the data, as there wasn't a clear one that I found, making it more difficult to understand some of the entries.
